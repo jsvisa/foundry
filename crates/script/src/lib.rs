@@ -43,7 +43,6 @@ use foundry_config::{
 };
 use foundry_evm::{
     backend::Backend,
-    constants::DEFAULT_CREATE2_DEPLOYER,
     executors::ExecutorBuilder,
     inspectors::{
         cheatcodes::{BroadcastableTransactions, Wallets},
@@ -71,6 +70,9 @@ mod verify;
 
 // Loads project's figment and merges the build cli arguments into it
 foundry_config::merge_impl_figment_convert!(ScriptArgs, opts, evm_opts);
+
+// https://etherscan.io/address/0x4e59b44847b379578588920ca78fbf26c0b4956c#code
+const DEPLOYER: &str = "0x4e59b44847b379578588920ca78fbf26c0b4956c";
 
 /// CLI arguments for `forge script`.
 #[derive(Clone, Debug, Default, Parser)]
@@ -196,7 +198,7 @@ pub struct ScriptArgs {
     #[arg(long, env = "ETH_TIMEOUT")]
     pub timeout: Option<u64>,
 
-    #[arg(long, short, value_name = "ADDRESS", default = DEFAULT_CREATE2_DEPLOYER)]
+    #[arg(long, value_name = "ADDRESS", default_value = DEPLOYER)]
     pub create2_deployer: Address,
 
     #[command(flatten)]
@@ -419,7 +421,7 @@ impl ScriptArgs {
 
             // Find if it's a CREATE or CREATE2. Otherwise, skip transaction.
             if let Some(TxKind::Call(to)) = to {
-                if to == DEFAULT_CREATE2_DEPLOYER {
+                if to == self.create2_deployer {
                     // Size of the salt prefix.
                     offset = 32;
                 } else {
@@ -627,7 +629,11 @@ impl ScriptConfig {
             });
         }
 
-        Ok(ScriptRunner::new(builder.build(env, db), self.evm_opts.clone()))
+        Ok(ScriptRunner::new(
+            builder.build(env, db),
+            self.evm_opts.clone(),
+            self.create2_deployer.clone(),
+        ))
     }
 }
 
