@@ -469,6 +469,10 @@ pub struct Config {
     /// Whether to enable Alphanet features.
     pub alphanet: bool,
 
+    /// The CREATE2 deployer address to use.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub create2_deployer: Option<Address>,
+
     /// Timeout for transactions in seconds.
     pub transaction_timeout: u64,
 
@@ -2242,6 +2246,7 @@ impl Default for Config {
             extra_args: vec![],
             eof_version: None,
             alphanet: false,
+            create2_deployer: None,
             transaction_timeout: 120,
             eof: false,
             _non_exhaustive: (),
