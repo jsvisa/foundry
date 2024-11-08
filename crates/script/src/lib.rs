@@ -43,7 +43,7 @@ use foundry_config::{
 };
 use foundry_evm::{
     backend::Backend,
-    constants::get_create2_deployer,
+    constants::DEFAULT_CREATE2_DEPLOYER,
     executors::ExecutorBuilder,
     inspectors::{
         cheatcodes::{BroadcastableTransactions, Wallets},
@@ -192,6 +192,10 @@ pub struct ScriptArgs {
     )]
     pub with_gas_price: Option<U256>,
 
+    /// The CREATE2 deployer address to use
+    #[arg(long, value_name = "ADDRESS")]
+    pub create2_deployer: Option<Address>,
+
     /// Timeout to use for broadcasting transactions.
     #[arg(long, env = "ETH_TIMEOUT")]
     pub timeout: Option<u64>,
@@ -222,6 +226,9 @@ impl ScriptArgs {
         if let Some(sender) = self.maybe_load_private_key()? {
             evm_opts.sender = sender;
         }
+        evm_opts.create2_deployer = self
+            .create2_deployer
+            .unwrap_or_else(|| config.create2_deployer.unwrap_or(DEFAULT_CREATE2_DEPLOYER));
 
         let script_config = ScriptConfig::new(config, evm_opts).await?;
 
@@ -232,7 +239,9 @@ impl ScriptArgs {
     pub async fn run_script(self) -> Result<()> {
         trace!(target: "script", "executing script command");
 
-        let compiled = self.preprocess().await?.compile()?;
+        let state = self.preprocess().await?;
+        let create2_deployer = state.script_config.evm_opts.create2_deployer;
+        let compiled = state.compile()?;
 
         // Move from `CompiledState` to `BundledState` either by resuming or executing and
         // simulating script.
@@ -284,6 +293,7 @@ impl ScriptArgs {
             pre_simulation.args.check_contract_sizes(
                 &pre_simulation.execution_result,
                 &pre_simulation.build_data.known_contracts,
+                create2_deployer,
             )?;
 
             pre_simulation.fill_metadata().await?.bundle().await?
@@ -372,6 +382,7 @@ impl ScriptArgs {
         &self,
         result: &ScriptResult,
         known_contracts: &ContractsByArtifact,
+        create2_deployer: Address,
     ) -> Result<()> {
         // (name, &init, &deployed)[]
         let mut bytecodes: Vec<(String, &[u8], &[u8])> = vec![];
@@ -404,7 +415,6 @@ impl ScriptArgs {
             None => CONTRACT_MAX_SIZE,
         };
 
-        let create2_deployer = get_create2_deployer();
         for (data, to) in result.transactions.iter().flat_map(|txes| {
             txes.iter().filter_map(|tx| {
                 tx.transaction
@@ -542,6 +552,7 @@ impl ScriptConfig {
             // dapptools compatibility
             1
         };
+
         Ok(Self { config, evm_opts, sender_nonce, backends: HashMap::default() })
     }
 
