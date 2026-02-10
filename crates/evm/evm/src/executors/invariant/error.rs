@@ -15,6 +15,9 @@ pub struct InvariantFailures {
     pub revert_reason: Option<String>,
     /// Maps a broken invariant to its specific error.
     pub error: Option<InvariantFuzzError>,
+    /// Stores assertion failures separately when fail_on_revert is false.
+    /// This allows reporting assertion failures even when the test continues running.
+    pub assertion_failures: Vec<(FailedInvariantCaseData, Vec<BasicTxDetails>)>,
 }
 
 impl InvariantFailures {

@@ -24,6 +24,8 @@ pub struct InvariantFuzzTestResult {
     pub cases: Vec<FuzzedCases>,
     /// Number of reverted fuzz calls
     pub reverts: usize,
+    /// Assertion failures recorded during the test run (when fail_on_revert is false).
+    pub assertion_failures: Vec<(String, Vec<BasicTxDetails>)>,
     /// The entire inputs of the last run of the invariant campaign, used for
     /// replaying the run for collecting traces.
     pub last_run_inputs: Vec<BasicTxDetails>,

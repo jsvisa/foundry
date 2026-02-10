@@ -502,6 +502,11 @@ impl<'a> InvariantExecutor<'a> {
                         // Skip invariant check but still track reverts
                         if call_result.reverted {
                             invariant_test.test_data.failures.reverts += 1;
+
+                            // Check if this is an assertion failure (state snapshot failure)
+                            let is_assertion_failure =
+                                call_result.has_state_snapshot_failure || call_result.reverter.is_some();
+
                             if self.config.fail_on_revert {
                                 let case_data = error::FailedInvariantCaseData::new(
                                     &invariant_contract,
@@ -516,6 +521,25 @@ impl<'a> InvariantExecutor<'a> {
                                 invariant_test.test_data.failures.error =
                                     Some(InvariantFuzzError::Revert(case_data));
                                 result::RichInvariantResults::new(false, None)
+                            } else if is_assertion_failure && self.config.record_assertion_failures {
+                                // Record assertion failure even when fail_on_revert is false
+                                let case_data = error::FailedInvariantCaseData::new(
+                                    &invariant_contract,
+                                    &self.config,
+                                    &invariant_test.targeted_contracts,
+                                    &current_run.inputs,
+                                    call_result,
+                                    &[],
+                                );
+                                invariant_test.test_data.failures.assertion_failures.push((
+                                    case_data,
+                                    current_run.inputs.clone(),
+                                ));
+
+                                if !invariant_contract.is_optimization() {
+                                    current_run.inputs.pop();
+                                }
+                                result::RichInvariantResults::new(true, None)
                             } else if !invariant_contract.is_optimization() {
                                 // In optimization mode, keep reverted calls to preserve
                                 // warp/roll values for correct replay during shrinking.
@@ -593,11 +617,37 @@ impl<'a> InvariantExecutor<'a> {
         trace!(?fuzz_fixtures);
         invariant_test.fuzz_state.log_stats();
 
+        // Log assertion failures if any were recorded
+        let assertion_failures_count = invariant_test.test_data.failures.assertion_failures.len();
+        if assertion_failures_count > 0 {
+            warn!(
+                target: "forge::test",
+                "Recorded {} assertion failure(s) during invariant test run (fail_on_revert=false). \
+                 These failures were recorded but did not stop the test.",
+                assertion_failures_count
+            );
+            for (i, (case, _)) in invariant_test.test_data.failures.assertion_failures.iter().enumerate()
+            {
+                info!(
+                    target: "forge::test",
+                    "Assertion failure #{}: {}",
+                    i + 1,
+                    case.revert_reason
+                );
+            }
+        }
+
         let result = invariant_test.test_data;
         Ok(InvariantFuzzTestResult {
             error: result.failures.error,
             cases: result.fuzz_cases,
             reverts: result.failures.reverts,
+            assertion_failures: result
+                .failures
+                .assertion_failures
+                .iter()
+                .map(|(case, _)| (case.revert_reason.clone(), vec![]))
+                .collect(),
             last_run_inputs: result.last_run_inputs,
             gas_report_traces: result.gas_report_traces,
             line_coverage: result.line_coverage,
