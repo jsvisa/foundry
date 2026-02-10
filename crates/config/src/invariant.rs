@@ -49,6 +49,12 @@ pub struct InvariantConfig {
     ///
     /// Example: `check_interval = 10` means assert after calls 10, 20, 30, ... and the last call.
     pub check_interval: u32,
+    /// Whether to record and report assertion failures even when fail_on_revert is false.
+    ///
+    /// When enabled, assertion failures (e.g., `assertTrue(false)`) will be recorded
+    /// and reported by the fuzzer, even if the test continues running after the failure.
+    /// This is useful for discovering all assertion failures in a single test run.
+    pub record_assertion_failures: bool,
 }
 
 impl Default for InvariantConfig {
@@ -70,6 +76,7 @@ impl Default for InvariantConfig {
             max_time_delay: None,
             max_block_delay: None,
             check_interval: 1,
+            record_assertion_failures: false,
         }
     }
 }
