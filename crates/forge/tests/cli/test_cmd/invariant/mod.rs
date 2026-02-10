@@ -1177,3 +1177,125 @@ contract CheckIntervalInlineTest is Test {
 "#
     ]]);
 });
+
+// Tests that record_assertion_failures option is respected.
+// With fail_on_revert=false and record_assertion_failures=false (default),
+// assertion failures should be silently ignored and test continues.
+// With record_assertion_failures=true, assertion failures should be recorded and logged.
+// <https://github.com/foundry-rs/foundry/issues/13322>
+forgetest_init!(record_assertion_failures_option, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 5;
+        config.invariant.fail_on_revert = false;
+        // record_assertion_failures defaults to false
+    });
+    prj.add_test(
+        "RecordAssertionTest.t.sol",
+        r#"
+import {Test} from "forge-std/Test.sol";
+
+contract RecordAssertionHandler {
+    uint256 public count;
+
+    function doAction() public {
+        count++;
+    }
+}
+
+contract RecordAssertionTest is Test {
+    RecordAssertionHandler handler;
+
+    function setUp() public {
+        handler = new RecordAssertionHandler();
+        targetContract(address(handler));
+    }
+
+    // This will trigger an assertion failure during the invariant check
+    function invariant_always_fail() public view {
+        assertTrue(false, "intentional assertion failure");
+    }
+}
+   "#,
+    );
+
+    // With record_assertion_failures=false (default), assertion failures are silently ignored
+    cmd.args(["test", "--mt", "invariant_always_fail"]).assert_success().stdout_eq(str![[
+        r#"
+...
+[PASS] invariant_always_fail() (runs: 1, calls: 25, reverts: 0)
+...
+"#
+    ]]);
+
+    // Now enable record_assertion_failures to record assertion failures
+    prj.update_config(|config| {
+        config.invariant.record_assertion_failures = true;
+    });
+    // The test should still pass, but assertion failures should be logged
+    cmd.forge_fuse().args(["test", "--mt", "invariant_always_fail"]).assert_success().stdout_eq(str![[
+        r#"
+...
+[PASS] invariant_always_fail() (runs: 1, calls: 25, reverts: 0)
+
+Warning: Recorded 1 assertion failure(s) during invariant test run (fail_on_revert=false).
+These failures were recorded but did not stop the test.
+"#
+    ]]);
+});
+
+// Tests that record_assertion_failures records multiple assertion failures.
+forgetest_init!(record_multiple_assertion_failures, |prj, cmd| {
+    prj.update_config(|config| {
+        config.invariant.runs = 1;
+        config.invariant.depth = 5;
+        config.invariant.fail_on_revert = false;
+        config.invariant.record_assertion_failures = true;
+    });
+    prj.add_test(
+        "MultipleAssertionTest.t.sol",
+        r#"
+import {Test} from "forge-std/Test.sol";
+
+contract MultipleAssertionHandler {
+    uint256 public count;
+
+    function doAction() public {
+        count++;
+    }
+}
+
+contract MultipleAssertionTest is Test {
+    MultipleAssertionHandler handler;
+    bool[] public assertionResults;
+
+    function setUp() public {
+        handler = new MultipleAssertionHandler();
+        targetContract(address(handler));
+    }
+
+    function afterInvariant() public {
+        // Record assertion results from handler
+        for (uint256 i = 0; i < assertionResults.length; i++) {
+            assertTrue(assertionResults[i], "should all be true");
+        }
+    }
+
+    function invariant_always_fail() public view {
+        // Trigger assertion failure every time
+        assertTrue(false, "intentional failure");
+    }
+}
+   "#,
+    );
+
+    cmd.args(["test", "--mt", "invariant_always_fail"]).assert_success().stdout_eq(str![[
+        r#"
+...
+[PASS] invariant_always_fail() (runs: 1, calls: 25, reverts: 0)
+
+Warning: Recorded [0-9]+ assertion failure(s) during invariant test run
+...
+"#
+    ]]);
+});
